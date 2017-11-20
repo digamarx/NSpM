@@ -20,6 +20,8 @@ import re
 import sys
 import traceback
 
+import math
+
 from generator_utils import log_statistics, saveCache, query_dbpedia, strip_brackets, replacements, read_template_file
 
 CELEBRITY_LIST = [
@@ -30,31 +32,93 @@ CELEBRITY_LIST = [
     ]
 
 SPECIAL_CLASSES = {
-    'dbo:Person': ['dbo:TableTennisPlayer'],
-    'dbo:Athlete': ['dbo:TableTennisPlayer']
+    'dbo:Person': ['<http://dbpedia.org/class/yago/Wikicat21st-centuryActors>', 'dbo:BadmintonPlayer'],
+    'dbo:Athlete': ['dbo:BadmintonPlayer']
 }
 EXAMPLES_PER_TEMPLATE = 300
 
-def extract_bindings( data, template ):
-    matches = list()
-    for match in data:
-        matches.append(match)
+def extract_bindings( results, template ):
+    variables = getattr(template, 'variables')
+    def extract (data):
+        matches = list()
+        for match in results[data]:
+            matches.append(match)
+        return matches
 
-    random.shuffle(matches)
-    logging.debug('{} matches for {}'.format(len(matches), getattr(template, 'id')))
+    def get_best_matches (matches):
+        return sort_matches(matches, template)[0:EXAMPLES_PER_TEMPLATE]
 
-    if len(matches) == 0:
+
+    matches = map(extract, results)
+
+    logging.debug('{} matches for {}'.format('/ '.join(map(len, matches)), getattr(template, 'id')))
+
+    if not all(map(len, matches)):
         return None
 
-    if len(matches) <= EXAMPLES_PER_TEMPLATE:
-        best_matches = matches
-    else:
-        best_matches = sort_matches(matches, template)[0:EXAMPLES_PER_TEMPLATE]
-
-    bindings = list()
+    best_matches = map(get_best_matches, matches)
     variables = getattr(template, 'variables')
+    permutation = create_permutation(best_matches, get_best_matches, variables, EXAMPLES_PER_TEMPLATE)
 
-    for match in best_matches:
+    bindings = create_bindings(permutation, variables)
+    return bindings
+
+
+def create_permutation( best_matches, get_best_matches, variables, max_examples ):
+    if len(variables) == 1:
+        permutation = best_matches[0]
+    else:
+        if len(variables) == 2:
+            if all(map(lambda ms: len(ms) >= max_examples, best_matches)):
+                permutation = map(lambda i: dict(best_matches[0][i].items() + best_matches[1][i].items()), range(max_examples))
+            else:
+                if any(map(lambda ms: len(ms) >= max_examples, best_matches)):
+                    longer_list = filter(lambda ms: len(ms) >= max_examples, best_matches)[0]
+                    shorter_list = filter(lambda ms: len(ms) < max_examples, best_matches)[0]
+                    repeated_shorter_list = operator.repeat(shorter_list, int(math.ceil(float(max_examples) / len(shorter_list))))
+                    permutation = map(lambda i : dict(longer_list[i].items() + repeated_shorter_list[i].items()), range(max_examples))
+                else:
+                    permutation = get_best_matches([dict(x.items()+y.items()) for x in best_matches[0] for y in best_matches[1]])[
+                                  0:300]
+        else:
+            if len(variables) == 3:
+                if all(map(lambda ms: len(ms) >= max_examples, best_matches)):
+                    permutation = map(lambda i : dict(best_matches[0][i].items() + best_matches[1][i].items() + best_matches[2][i].items()), range(max_examples))
+
+                else:
+                    if len(filter(lambda ms: len(ms) >= max_examples, best_matches)) == 2:
+                        longer_list = filter(lambda ms: len(ms) >= max_examples, best_matches)[0]
+                        longer_list_2 = filter(lambda ms: len(ms) >= max_examples, best_matches)[1]
+                        shorter_list = filter(lambda ms: len(ms) < max_examples, best_matches)[0]
+                        repeated_shorter_list = operator.repeat(shorter_list, int(math.ceil(float(max_examples) / len(shorter_list))))
+                        permutation = map(lambda i: dict(
+                            longer_list[i].items() + longer_list_2[i].items() + repeated_shorter_list[i].items()),
+                                          range(max_examples))
+                    else:
+                        if len(filter(lambda ms: len(ms) >= max_examples, best_matches)) == 1:
+                            longer_list = filter(lambda ms: len(ms) >= max_examples, best_matches)[0]
+                            shorter_list = filter(lambda ms: len(ms) < max_examples, best_matches)[0]
+                            shorter_list_2 = filter(lambda ms: len(ms) < max_examples, best_matches)[1]
+                            best_part_permutation = get_best_matches(
+                                [dict(x.items()+y.items()) for x in shorter_list for y in shorter_list_2])[0:max_examples]
+                            repeated_best_part_permutation = operator.repeat(best_part_permutation, int(
+                                math.ceil(float(max_examples) / len(best_part_permutation))))
+                            permutation = map(lambda i: dict(
+                                longer_list[i].items() + repeated_best_part_permutation[i].items()),
+                                              range(max_examples))
+                        else:
+                            permutations = [dict(x.items()+y.items()+z.items()) for x in best_matches[0] for y in best_matches[1] for
+                                            z in best_matches[2]]
+                            permutation = get_best_matches(permutations)[0:max_examples]
+
+            else:
+                permutation = []
+    return permutation
+
+
+def create_bindings( conatenated_matches, variables ):
+    bindings = list()
+    for match in conatenated_matches:
         binding = {}
         for variable in variables:
             resource = match[variable]["value"]
@@ -62,13 +126,12 @@ def extract_bindings( data, template ):
             binding[variable] = {'uri': resource, 'label': label}
             used_resources.update([resource])
         bindings.append(binding)
-        
     return bindings
 
 
 def sort_matches( matches, template ):
     variables = getattr(template, 'variables')
-    get_usages = lambda match : map(lambda variable : used_resources[match[variable]["value"]], variables)
+    get_usages = lambda match : filter(lambda x : x is not None, map(lambda variable : used_resources[match[variable]["value"] if variable in match else None], variables))
 
     matches_with_usages = map(lambda match : {'usages': get_usages(match), 'match': match}, matches)
     sorted_matches_with_usages = sorted(matches_with_usages, key=prioritize_usage)
@@ -153,7 +216,7 @@ def generate_dataset(templates, output_dir, file_mode):
         for template in templates:
             try:
                 results = get_results_of_generator_query(cache, template)
-                bindings = extract_bindings(results["results"]["bindings"], template)
+                bindings = extract_bindings(results, template)
 
                 if bindings is None:
                     logging.debug("no data for {}".format(getattr(template, 'id')))
@@ -173,15 +236,18 @@ def generate_dataset(templates, output_dir, file_mode):
 
 
 def get_results_of_generator_query( cache, template ):
-    generator_query = getattr(template, 'generator_query')
+    raw_generator_query = getattr(template, 'generator_query')
+    variables = getattr(template, 'variables')
 
-    if generator_query in cache:
-        results = cache[generator_query]
+    if raw_generator_query in cache:
+        results = cache[raw_generator_query]
     else:
         query = prepare_generator_query(template)
-        logging.debug('ready generator_query: ' + query)
-        results = query_dbpedia(query)
-        cache[generator_query] = results
+        logging.debug('raw generator_query: ' + query)
+        queries = map(lambda variable : prepare_query_for_variable(query, variable), variables)
+        results = dict(zip(variables, map(lambda res : res['results']['bindings'], map(query_dbpedia, queries))))
+        cache[raw_generator_query] = results
+
     return results
 
 LABEL_REPLACEMENT = " , (str(?lab{variable}) as ?l{variable}) where {{ ?{variable} rdfs:label ?lab{variable} . FILTER(lang(?lab{variable}) = 'en') . "
@@ -189,21 +255,31 @@ CLASS_REPLACEMENT = " where {{ ?{variable} a {ontology_class} . "
 CLASSES_REPLACEMENT = " where {{ ?{variable} a ?t . VALUES (?t) {{ {classes} }} . "
 SUBCLASS_REPLACEMENT = " where {{ ?{variable} rdfs:subClassOf {ontology_class} . "
 
+def prepare_query_for_variable (query, variable):
+    select_statement_pattern = r'select.*?where { '
+    replacement = "select distinct ?{variable}, (str(?lab{variable}) as ?l{variable}) where {{ ?{variable} rdfs:label ?lab{variable} . FILTER(lang(?lab{variable}) = 'en') . ".format(variable=variable)
+    specialized_query = re.sub(select_statement_pattern, replacement, query)
+    logging.debug('specialized generator_query: ' + specialized_query)
+    return specialized_query
+
+
+def variable_is_subclass ( query, variable ):
+    predicate_pattern = r'\s+?(rdf:type|a)\s+?\?' + variable
+    predicate_match = re.search(predicate_pattern, query)
+    return bool(predicate_match)
+
+
+def add_requirement( query, where_replacement ):
+    return query.replace(" where { ", where_replacement)
+
+
 def prepare_generator_query( template ):
     generator_query = getattr(template, 'generator_query')
     target_classes = getattr(template, 'target_classes')
     variables = getattr(template, 'variables')
 
-    def variable_is_subclass ( query, variable ):
-        predicate_pattern = r'\s+?(rdf:type|a)\s+?\?' + variable
-        predicate_match = re.search(predicate_pattern, query)
-        return bool(predicate_match)
-
-    add_requirement = lambda query, where_replacement: query.replace(" where { ", where_replacement)
-
-
     for i, variable in enumerate(variables):
-        generator_query = add_requirement(generator_query, LABEL_REPLACEMENT.format(variable=variable))
+        # generator_query = add_requirement(generator_query, LABEL_REPLACEMENT.format(variable=variable))
         variable_has_a_type = len(target_classes) > i and target_classes[i]
         if variable_has_a_type:
             if variable_is_subclass(generator_query, variable):

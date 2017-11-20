@@ -12,12 +12,13 @@ GRAPH = "http://dbpedia.org"
 
 def log_statistics ( used_resources ):
     total_number_of_resources = len(used_resources)
+    total_number_of_filled_placeholder_positions = sum(used_resources.values())
     examples_per_instance = collections.Counter()
     for resource in used_resources:
         count = used_resources[resource]
         examples_per_instance.update([count])
 
-    logging.info('{:6d} used resources'.format(total_number_of_resources))
+    logging.info('{:6d} used resources in {} placeholder positions'.format(total_number_of_resources, total_number_of_filled_placeholder_positions))
     for usage in examples_per_instance:
         logging.info('{:6d} resources occur \t{:6d} times \t({:6.2f} %) '.format(examples_per_instance[usage], usage, examples_per_instance[usage]*100/total_number_of_resources))
 

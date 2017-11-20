@@ -19,7 +19,7 @@ def test_single_resource_sort():
 
     result = sorted(matches, key=generator.prioritize_usage)
 
-    assert map(operator.itemgetter(0), map(operator.itemgetter('usages'), result)) == [2, 1, 0, 3, 17]
+    assert map(operator.itemgetter(0), map(operator.itemgetter('usages'), result)) == [17, 3, 2, 1, 0 ]
 
 
 def test_couple_resource_sort():
@@ -27,4 +27,28 @@ def test_couple_resource_sort():
 
     result = sorted(matches, key=generator.prioritize_usage)
 
-    assert map(operator.itemgetter('usages'), result) == [[2, 2], [1, 2], [3, 2], [0, 0], [17, 2]]
+    assert map(operator.itemgetter('usages'), result) == [ [17, 2], [3, 2], [2, 2], [1, 2], [0, 0]]
+
+
+def test_create_permutation():
+    first_result_set = [{'a': 1}, {'a': 2}, {'a': 3}]
+    second_result_set = [{'b': 1}, {'b': 2}]
+    third_result_set = [{'c': 1}]
+    EXAMPLES_PER_TEMPLATE = 3
+    get_best_matches = lambda x: x
+
+    single_result_set = generator.create_permutation([first_result_set], get_best_matches, ['a'], EXAMPLES_PER_TEMPLATE)
+    assert len(single_result_set) == 3
+    assert single_result_set == first_result_set
+
+    result = generator.create_permutation([first_result_set, second_result_set], get_best_matches, ['a', 'b'], EXAMPLES_PER_TEMPLATE)
+    assert len(result) == 3
+    assert {'a': 1, 'b': 1} in result
+    assert {'a': 2, 'b': 2} in result
+    assert {'a': 3, 'b': 1} in result
+
+    result_three_set = generator.create_permutation([first_result_set, second_result_set, third_result_set], get_best_matches, ['a', 'b', 'c'], EXAMPLES_PER_TEMPLATE)
+    assert len(result_three_set) == 3
+    assert {'a': 1, 'b': 1, 'c': 1} in result_three_set
+    assert {'a': 2, 'b': 2, 'c': 1} in result_three_set
+    assert {'a': 3, 'b': 1, 'c': 1} in result_three_set
