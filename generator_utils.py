@@ -10,7 +10,8 @@ import urllib2
 ENDPOINT = "http://dbpedia.org/sparql"
 GRAPH = "http://dbpedia.org"
 
-def log_statistics ( used_resources ):
+
+def log_statistics ( used_resources, special_classes, not_instanced_templates):
     total_number_of_resources = len(used_resources)
     total_number_of_filled_placeholder_positions = sum(used_resources.values())
     examples_per_instance = collections.Counter()
@@ -21,6 +22,11 @@ def log_statistics ( used_resources ):
     logging.info('{:6d} used resources in {} placeholder positions'.format(total_number_of_resources, total_number_of_filled_placeholder_positions))
     for usage in examples_per_instance:
         logging.info('{:6d} resources occur \t{:6d} times \t({:6.2f} %) '.format(examples_per_instance[usage], usage, examples_per_instance[usage]*100/total_number_of_resources))
+    for cl in special_classes:
+        logging.info('{} contains: {}'.format(cl, ', '.join(special_classes[cl])))
+    logging.info('{:6d} not instanciated templates:'.format(sum(not_instanced_templates.values())))
+    for template in not_instanced_templates:
+        logging.info('{}'.format(template))
 
 
 def saveCache (file, cache):
@@ -36,7 +42,7 @@ def query_dbpedia( query ):
     param["format"] = "JSON"
     param["CXML_redir_for_subjs"] = "121"
     param["CXML_redir_for_hrefs"] = ""
-    param["timeout"] = "600000" # ten minutes - works with Virtuoso endpoints
+    param["timeout"] = "600" # in seconds ten minutes - works with Virtuoso endpoints
     param["debug"] = "on"
     try:
         resp = urllib2.urlopen(ENDPOINT + "?" + urllib.urlencode(param))
