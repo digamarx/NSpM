@@ -29,7 +29,7 @@ def log_statistics ( used_resources, special_classes, not_instanced_templates):
         logging.info('{}'.format(template))
 
 
-def saveCache (file, cache):
+def save_cache ( file, cache ):
     ordered = collections.OrderedDict(cache.most_common())
     with open(file, 'w') as outfile:
         json.dump(ordered, outfile)
