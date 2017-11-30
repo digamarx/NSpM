@@ -27,4 +27,15 @@ def test_couple_resource_sort():
 
     result = sorted(matches, key=generator.prioritize_usage)
 
-    assert map(operator.itemgetter('usages'), result) == [[2, 2], [1, 2], [3, 2], [0, 0], [17, 2]]
+    assert map(operator.itemgetter('usages'), result) == [[17, 2], [3, 2], [2, 2], [1, 2], [0, 0] ]
+
+
+def test_samplify_query():
+    query = 'select distinct ?a, ?b, ?c where { ?b <http://dbpedia.org/property/debutteam> ?uri . ?a <http://dbpedia.org/property/debutteam> ?uri . \
+               ?c <http://dbpedia.org/property/debutteam> ?uri }'
+    variables = ['a', 'b', 'c']
+
+    result = generator.use_sample(query, variables)
+
+    assert result ==  'select ?a, SAMPLE(?b), SAMPLE(?c) where { ?b <http://dbpedia.org/property/debutteam> ?uri . ?a <http://dbpedia.org/property/debutteam> ?uri . \
+               ?c <http://dbpedia.org/property/debutteam> ?uri } GROUP BY ?a'

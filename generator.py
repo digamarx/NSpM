@@ -223,6 +223,9 @@ def prepare_generator_query( template ):
     target_classes = getattr(template, 'target_classes')
     variables = getattr(template, 'variables')
 
+    if len(variables) > 1:
+        generator_query = use_sample(generator_query, variables)
+
     for i, variable in enumerate(variables):
         generator_query = add_requirement(generator_query, LABEL_REPLACEMENT.format(variable=variable))
         variable_has_a_type = len(target_classes) > i and target_classes[i]
@@ -238,6 +241,17 @@ def prepare_generator_query( template ):
                     ontology_class = normalized_target_class
                     generator_query = add_requirement(generator_query, CLASS_REPLACEMENT.format(variable=variable, ontology_class=ontology_class))
     return generator_query
+
+
+def use_sample( generator_query, variables ):
+    select_statement_pattern = r'select.*?where { '
+    first_var = variables[0]
+    sample_others = ', '.join(map(lambda var: 'SAMPLE(?{})'.format(var), variables[1:]))
+    select_replacement = 'select ?{first_var}, {sample_others} where {{ '.format(first_var=first_var,
+                                                                                sample_others=sample_others)
+    group_by_extension = ' GROUP BY ?{}'.format(first_var)
+    samplified_query = re.sub(select_statement_pattern, select_replacement, generator_query) + group_by_extension
+    return samplified_query
 
 
 def normalize (ontology_class):
